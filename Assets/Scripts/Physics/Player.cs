@@ -20,7 +20,7 @@ namespace Prime31
         float velocityXSmoothing;
 
         public CharacterController2D controller;
-
+        public bool proj; 
         void Start()
         {
             controller = GetComponent<CharacterController2D>();
@@ -32,7 +32,6 @@ namespace Prime31
 
         void Update()
         {
-            //Debug.Log("Horizontal Collision: " + controller.collisions.right);
             if (controller.isGrounded)
             {
                 velocity.y = 0;
@@ -44,15 +43,13 @@ namespace Prime31
             {
                 velocity.y = jumpVelocity;
             }
-            /*
-            if (!controller.collisions.below)
+
+            if (!proj)
             {
-                //velocity.x = 0; 
+                Vector2 input = new Vector2(Input.GetAxisRaw("Horizontal"), 0);
+                float targetVelocityX = input.x * moveSpeed;
+                velocity.x = Mathf.SmoothDamp(velocity.x, targetVelocityX, ref velocityXSmoothing, accelerationTimeGrounded);
             }
-            */
-            Vector2 input = new Vector2(Input.GetAxisRaw("Horizontal"), 0);
-            float targetVelocityX = input.x * moveSpeed;
-            velocity.x = Mathf.SmoothDamp(velocity.x, targetVelocityX, ref velocityXSmoothing, accelerationTimeGrounded);
             velocity.y += gravity * Time.deltaTime;
             controller.move(velocity * Time.deltaTime);
         }
