@@ -8,9 +8,20 @@ public class GunController : MonoBehaviour
     private Vector3 v3Pos;
     private float angle;
     private float distance = 30f;
+    private float prevX;
+    private float prevY;
+    private bool firstRot = true; 
+    private Player playerRef;
+
+
+    private void Start()
+    {
+        playerRef = player.GetComponent<Player>();    
+    }
 
     private void Update()
     {
+
         RotateGun(); 
 
     }
@@ -27,7 +38,18 @@ public class GunController : MonoBehaviour
 
         float xPos = Mathf.Cos(Mathf.Deg2Rad * angle) * distance;
         float yPos = Mathf.Sin(Mathf.Deg2Rad * angle) * distance;
-        transform.localPosition = new Vector3(player.transform.position.x + xPos, player.transform.position.y + yPos, 0);
+        if(firstRot)
+        {
+            prevX = player.transform.position.x + xPos;
+            prevY = player.transform.position.y + yPos;
+        }
+
+       
+        
+
+        transform.localPosition = new Vector3(Mathf.Lerp(prevX, player.transform.position.x + xPos , .6f), Mathf.Lerp(prevY, player.transform.position.y + yPos, .6f), 0);
+        prevX = player.transform.position.x + xPos + playerRef.velocity.x;
+        prevY = player.transform.position.y + yPos + playerRef.velocity.y;
     }
 
     public void ShootProjectile()

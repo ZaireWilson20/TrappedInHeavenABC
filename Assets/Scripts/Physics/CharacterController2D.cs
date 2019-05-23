@@ -29,7 +29,8 @@ namespace Prime31
             public bool wasGroundedLastFrame;
             public bool movingDownSlope;
             public float slopeAngle;
-
+            public int slopeDirection;
+            public bool stationarySlope; 
 
             public bool hasCollision()
             {
@@ -51,6 +52,8 @@ namespace Prime31
             }
         }
 
+        public enum CharacterState { SAFE, HURT };
+        
         #endregion
 
 
@@ -134,6 +137,10 @@ namespace Prime31
         /// </summary>
         float _slopeLimitTangent = Mathf.Tan(75f * Mathf.Deg2Rad);
 
+        /// <summary>
+        /// Stores information about the object that the player collides with
+        /// </summary>
+        Collider2D objCollidedWith; 
 
         [HideInInspector]
         [NonSerialized]
@@ -152,9 +159,12 @@ namespace Prime31
         [NonSerialized]
         public Vector3 velocity;
         public bool isGrounded { get { return collisionState.below; } }
-
+        private float xProjectedVeloc;
+        private Player playerRef = null; 
         const float kSkinWidthFloatFudgeFactor = 0.001f;
 
+        [HideInInspector]
+        public CharacterState charState; 
         #endregion
 
 
@@ -205,6 +215,9 @@ namespace Prime31
                 if ((triggerMask.value & 1 << i) == 0)
                     Physics2D.IgnoreLayerCollision(gameObject.layer, i);
             }
+
+            if(gameObject.tag == "Player")
+                playerRef = gameObject.GetComponent<Player>();
         }
 
 
@@ -343,13 +356,20 @@ namespace Prime31
                     }
 
                 }
-                Debug.Log("pushing x");
                 objVelocity.x = forceVelocity.x * Time.deltaTime;
 
             }
             else
             {
                 projected = false;
+            }
+        }
+
+        public void SlideDownSlope(float minSlope)
+        {
+            if (collisionState.slopeDirection > 0 && collisionState.slopeAngle > minSlope)
+            {
+                
             }
         }
 
@@ -388,7 +408,7 @@ namespace Prime31
             var rayDistance = Mathf.Abs(deltaMovement.x) + _skinWidth;
             var rayDirection = isGoingRight ? Vector2.right : -Vector2.right;
             var initialRayOrigin = isGoingRight ? _raycastOrigins.bottomRight : _raycastOrigins.bottomLeft;
-
+            bool onSlope = false; 
             for (var i = 0; i < totalHorizontalRays; i++)
             {
                 var ray = new Vector2(initialRayOrigin.x, initialRayOrigin.y + i * _verticalDistanceBetweenRays);
@@ -402,7 +422,9 @@ namespace Prime31
                 else
                     _raycastHit = Physics2D.Raycast(ray, rayDirection, rayDistance, platformMask & ~oneWayPlatformMask);
 
-                if (_raycastHit)
+
+                //  Ground Collision
+                if (_raycastHit && _raycastHit.collider.gameObject.layer == LayerMask.NameToLayer("Ground") && gameObject.tag == "Player")
                 {
                     // the bottom ray can hit a slope but no other ray can so we have special handling for these cases
                     if (i == 0 && handleHorizontalSlope(ref deltaMovement, Vector2.Angle(_raycastHit.normal, Vector2.up)))
@@ -412,10 +434,15 @@ namespace Prime31
                         // this ensures that we stay flush to that slope
                         if (!collisionState.wasGroundedLastFrame)
                         {
+                            onSlope = true; 
                             float flushDistance = Mathf.Sign(deltaMovement.x) * (_raycastHit.distance - skinWidth);
                             transform.Translate(new Vector2(flushDistance, 0));
                         }
                         break;
+                    }
+                    else
+                    {
+                        onSlope = false; 
                     }
 
                     // set our new deltaMovement and recalculate the rayDistance taking it into account
@@ -441,8 +468,79 @@ namespace Prime31
                     if (rayDistance < _skinWidth + kSkinWidthFloatFudgeFactor)
                         break;
                 }
+
+
+
             }
+
+            // FOR FINDING ENEMIES
+            for (var i = 0; i < totalHorizontalRays; i++)
+            {
+                var ray = new Vector2(initialRayOrigin.x, initialRayOrigin.y + i * _verticalDistanceBetweenRays);
+
+                DrawRay(ray, rayDirection * rayDistance, Color.red);
+
+                // if we are grounded we will include oneWayPlatforms only on the first ray (the bottom one). this will allow us to
+                // walk up sloped oneWayPlatforms
+                if (i == 0 && collisionState.wasGroundedLastFrame)
+                    _raycastHit = Physics2D.Raycast(ray, rayDirection, rayDistance, platformMask);
+                else
+                    _raycastHit = Physics2D.Raycast(ray, rayDirection, rayDistance, platformMask & ~oneWayPlatformMask);
+
+                //Enemy Collision
+                if (_raycastHit && _raycastHit.collider.gameObject.layer == LayerMask.NameToLayer("Enemy") && gameObject.tag == "Player" && !playerRef.proj)
+                {
+                    charState = CharacterState.HURT;
+
+                    if (onSlope)
+                    {
+                        float flushDistance = Mathf.Sign(deltaMovement.x) * (_raycastHit.distance - skinWidth);
+                        transform.Translate(new Vector2(-flushDistance, 0));
+                    }
+                    float timeCollided = .5f;
+                    float projScale = 1f;
+                    Vector3 colliderPos = _raycastHit.collider.gameObject.transform.position;
+                    Vector3 directionToPlayer = new Vector3(gameObject.transform.position.x - colliderPos.x, gameObject.transform.position.y - colliderPos.y);
+                    Vector3 targetPos = new Vector3(gameObject.transform.position.x + projScale * directionToPlayer.x, gameObject.transform.position.y + projScale * directionToPlayer.y);
+
+                    float xdistance = targetPos.x - transform.position.x;
+                    float ydistance = targetPos.y - transform.position.y;
+                    float throwAngle = Mathf.Atan((ydistance + 4.90f * Mathf.Pow(timeCollided, 2)) / xdistance);
+                    float totalVelo = xdistance / (Mathf.Cos(throwAngle) * timeCollided);
+
+                    float xVelo, yVelo;
+                    xVelo = totalVelo * Mathf.Cos(throwAngle);
+
+                    xProjectedVeloc = xVelo;
+                    yVelo = totalVelo * Mathf.Sin(throwAngle);
+                    playerRef.proj = true;
+
+                    deltaMovement.x = _raycastHit.point.x - ray.x;
+                    rayDistance = Mathf.Abs(deltaMovement.x);
+
+                    // remember to remove the skinWidth from our deltaMovement
+                    if (isGoingRight)
+                    {
+                        deltaMovement.x -= _skinWidth;
+                        collisionState.right = true;
+                    }
+                    else
+                    {
+                        deltaMovement.x += _skinWidth;
+                        collisionState.left = true;
+                    }
+
+                    _raycastHitsThisFrame.Add(_raycastHit);
+
+                    playerRef.velocity = new Vector3(xVelo, yVelo);
+
+                    break;
+
+                }
+            }
+
         }
+
 
 
         /// <summary>
@@ -453,6 +551,7 @@ namespace Prime31
         /// <param name="angle">Angle.</param>
         bool handleHorizontalSlope(ref Vector3 deltaMovement, float angle)
         {
+            float orginSpeed = deltaMovement.x;
             // disregard 90 degree angles (walls)
             if (Mathf.RoundToInt(angle) == 90)
                 return false;
@@ -460,6 +559,7 @@ namespace Prime31
             // if we can walk on slopes and our angle is small enough we need to move up
             if (angle < slopeLimit)
             {
+                //Debug.Log("ANGLE: " + angle);
                 // we only need to adjust the deltaMovement if we are not jumping
                 // TODO: this uses a magic number which isn't ideal! The alternative is to have the user pass in if there is a jump this frame
                 if (deltaMovement.y < jumpingThreshold)
@@ -471,27 +571,46 @@ namespace Prime31
                     // we dont set collisions on the sides for this since a slope is not technically a side collision.
                     // smooth y movement when we climb. we make the y movement equivalent to the actual y location that corresponds
                     // to our new x location using our good friend Pythagoras
-                    deltaMovement.y = Mathf.Abs(Mathf.Tan(angle * Mathf.Deg2Rad) * deltaMovement.x);
-                    var isGoingRight = deltaMovement.x > 0;
-
-                    // safety check. we fire a ray in the direction of movement just in case the diagonal we calculated above ends up
-                    // going through a wall. if the ray hits, we back off the horizontal movement to stay in bounds.
-                    var ray = isGoingRight ? _raycastOrigins.bottomRight : _raycastOrigins.bottomLeft;
-                    RaycastHit2D raycastHit;
-                    if (collisionState.wasGroundedLastFrame)
-                        raycastHit = Physics2D.Raycast(ray, deltaMovement.normalized, deltaMovement.magnitude, platformMask);
-                    else
-                        raycastHit = Physics2D.Raycast(ray, deltaMovement.normalized, deltaMovement.magnitude, platformMask & ~oneWayPlatformMask);
-
-                    if (raycastHit)
+                    bool isGoingRight = false;
+                    if (deltaMovement.x != 0)
                     {
-                        // we crossed an edge when using Pythagoras calculation, so we set the actual delta movement to the ray hit location
-                        deltaMovement = (Vector3)raycastHit.point - ray;
-                        if (isGoingRight)
-                            deltaMovement.x -= _skinWidth;
+
+                        deltaMovement.y = Mathf.Abs(Mathf.Tan(angle * Mathf.Deg2Rad) * deltaMovement.x);
+                        isGoingRight = deltaMovement.x > 0;
+
+
+                        // safety check. we fire a ray in the direction of movement just in case the diagonal we calculated above ends up
+                        // going through a wall. if the ray hits, we back off the horizontal movement to stay in bounds.
+                        var ray = isGoingRight ? _raycastOrigins.bottomRight : _raycastOrigins.bottomLeft;
+                        RaycastHit2D raycastHit;
+
+
+                        if (collisionState.wasGroundedLastFrame)
+                        {
+                            raycastHit = Physics2D.Raycast(ray, deltaMovement.normalized, deltaMovement.magnitude, platformMask);
+                        }
                         else
-                            deltaMovement.x += _skinWidth;
+                            raycastHit = Physics2D.Raycast(ray, deltaMovement.normalized, deltaMovement.magnitude, platformMask & ~oneWayPlatformMask);
+
+                        if (raycastHit)
+                        {
+                            Debug.Log("Ray Hit");
+                            // we crossed an edge when using Pythagoras calculation, so we set the actual delta movement to the ray hit location
+                            deltaMovement = (Vector3)raycastHit.point - ray;
+                            //playerRef.moveSpeed = 15;
+                            //deltaMovement *= 2; 
+                            if (isGoingRight)
+                                deltaMovement.x -= _skinWidth;
+                            else
+                                deltaMovement.x += _skinWidth;
+                        }
+                        else
+                        {
+                            playerRef.moveSpeed = playerRef.baseMoveSpeed;
+                        }
                     }
+
+
 
                     _isGoingUpSlope = true;
                     collisionState.below = true;
@@ -527,8 +646,58 @@ namespace Prime31
 
                 DrawRay(ray, rayDirection * rayDistance, Color.red);
                 _raycastHit = Physics2D.Raycast(ray, rayDirection, rayDistance, mask);
-                if (_raycastHit)
+                if (_raycastHit && _raycastHit.collider.gameObject.layer == LayerMask.NameToLayer("Enemy") && gameObject.tag == "Player" && !playerRef.proj && !collisionState.movingDownSlope)
                 {
+
+
+
+                        if (rayDirection == -Vector2.up)
+                        {
+
+                            float timeCollided = .3f;
+                            float projScale = 4f;
+                            Vector3 colliderPos = _raycastHit.collider.gameObject.transform.position;
+                            Vector3 directionToPlayer = new Vector3(colliderPos.x, gameObject.transform.position.y - colliderPos.y);
+                            Vector3 targetPos = new Vector3(colliderPos.x + Mathf.Sign(deltaMovement.x) * (50), gameObject.transform.position.y + projScale * directionToPlayer.y);
+
+                            float xdistance = targetPos.x - transform.position.x;
+                            float ydistance = targetPos.y - transform.position.y;
+                            float throwAngle = Mathf.Atan((ydistance + 4.90f * Mathf.Pow(timeCollided, 2)) / xdistance);
+                            float totalVelo = xdistance / (Mathf.Cos(throwAngle) * timeCollided);
+
+                            float xVelo, yVelo;
+                            xVelo = totalVelo * Mathf.Cos(throwAngle);
+
+                            xProjectedVeloc = xVelo;
+                            yVelo = totalVelo * Mathf.Sin(throwAngle);
+                            playerRef.proj = true;
+
+                            deltaMovement.x = _raycastHit.point.x - ray.x;
+                            rayDistance = Mathf.Abs(deltaMovement.x);
+
+                            // remember to remove the skinWidth from our deltaMovement
+                            if (isGoingUp)
+                            {
+                                deltaMovement.x -= _skinWidth;
+                                collisionState.right = true;
+                            }
+                            else
+                            {
+                                deltaMovement.x += _skinWidth;
+                                collisionState.left = true;
+                            }
+
+                            _raycastHitsThisFrame.Add(_raycastHit);
+
+                            playerRef.velocity = new Vector3(xVelo, yVelo);
+                            Destroy(_raycastHit.collider.gameObject);
+                            break;
+                        }
+                    
+                }
+                else if (_raycastHit)
+                {
+                    collisionState.slopeDirection = (_raycastHit.normal.x > 0) ? 1 : -1; 
                     // set our new deltaMovement and recalculate the rayDistance taking it into account
                     deltaMovement.y = _raycastHit.point.y - ray.y;
                     rayDistance = Mathf.Abs(deltaMovement.y);
@@ -561,6 +730,8 @@ namespace Prime31
         }
 
 
+        private float permSlopeAngle;
+        private bool startTrig = false; 
         /// <summary>
         /// checks the center point under the BoxCollider2D for a slope. If it finds one then the deltaMovement is adjusted so that
         /// the player stays grounded and the slopeSpeedModifier is taken into account to speed up movement.
@@ -577,16 +748,42 @@ namespace Prime31
 
             var slopeRay = new Vector2(centerOfCollider, _raycastOrigins.bottomLeft.y);
             DrawRay(slopeRay, rayDirection * slopeCheckRayDistance, Color.yellow);
+
+
             _raycastHit = Physics2D.Raycast(slopeRay, rayDirection, slopeCheckRayDistance, platformMask);
             if (_raycastHit)
             {
+
+                // Set Stationary State based on velocity in x direction. If stationary, descend slope
+                if (playerRef != null)
+                {
+                    collisionState.stationarySlope = playerRef.inputInfo.stationary;
+
+                }
                 // bail out if we have no slope
                 var angle = Vector2.Angle(_raycastHit.normal, Vector2.up);
+                if (!startTrig)
+                {
+                    permSlopeAngle = angle;
+                    startTrig = true; 
+                }
+                //Debug.Log("PermAngle - Temp Angle: " + permSlopeAngle + " - " + angle + " = " + (permSlopeAngle - angle));
+                if(Mathf.Abs(permSlopeAngle - angle) > 30)
+                {
+                    //return; 
+                }
+                permSlopeAngle = angle; 
                 if (angle == 0)
                     return;
+                bool isMovingDownSlope = true;
+                
+                if (!collisionState.stationarySlope)
+                {
+                    // we are moving down the slope if our normal and movement direction are in the same x direction
+                    isMovingDownSlope = Mathf.Sign(_raycastHit.normal.x) == Mathf.Sign(deltaMovement.x);
+                }
 
-                // we are moving down the slope if our normal and movement direction are in the same x direction
-                var isMovingDownSlope = Mathf.Sign(_raycastHit.normal.x) == Mathf.Sign(deltaMovement.x);
+
                 if (isMovingDownSlope)
                 {
                     // going down we want to speed up in most cases so the slopeSpeedMultiplier curve should be > 1 for negative angles
@@ -596,6 +793,20 @@ namespace Prime31
                     //deltaMovement.x *= slopeModifier;
                     collisionState.movingDownSlope = true;
                     collisionState.slopeAngle = angle;
+                    if (playerRef != null)
+                    {
+                    }
+
+                    if (collisionState.stationarySlope && angle > 40 || collisionState.stationarySlope && playerRef.inputInfo.SlidingDownSlope)
+                    {
+                        deltaMovement.x += 10f * Mathf.Sign(_raycastHit.normal.x);
+                        playerRef.inputInfo.SlidingDownSlope = true; 
+                    }
+                    if (collisionState.stationarySlope && playerRef.inputInfo.SlidingDownSlope && angle < 3)
+                    {
+                        collisionState.stationarySlope = false;
+                        playerRef.inputInfo.SlidingDownSlope = false; 
+                    }
                 }
             }
         }
