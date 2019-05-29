@@ -36,8 +36,8 @@ public class GunController : MonoBehaviour
         if (angle < 0.0f) angle += 360.0f;
         transform.localEulerAngles = new Vector3(0, 0, angle);
 
-        float xPos = Mathf.Cos(Mathf.Deg2Rad * angle) * distance;
-        float yPos = Mathf.Sin(Mathf.Deg2Rad * angle) * distance;
+        float xPos = Mathf.Cos(Mathf.Deg2Rad * angle) * (distance*2);
+        float yPos = Mathf.Sin(Mathf.Deg2Rad * angle) * (distance*2);
         if(firstRot)
         {
             prevX = player.transform.position.x + xPos;

@@ -29,7 +29,7 @@ namespace Prime31
             public bool wasGroundedLastFrame;
             public bool movingDownSlope;
             public float slopeAngle;
-            public int slopeDirection;
+            public float slopeDirection; 
             public bool stationarySlope; 
 
             public bool hasCollision()
@@ -273,7 +273,7 @@ namespace Prime31
 
             // first, we check for a slope below us before moving
             // only check slopes if we are going down and grounded
-            if (deltaMovement.y < 0f && collisionState.wasGroundedLastFrame)
+            //if (collisionState.wasGroundedLastFrame)
                 handleVerticalSlope(ref deltaMovement);
 
             // now we check movement in the horizontal dir
@@ -447,6 +447,7 @@ namespace Prime31
 
                     // set our new deltaMovement and recalculate the rayDistance taking it into account
                     deltaMovement.x = _raycastHit.point.x - ray.x;
+                    //Debug.Log()
                     rayDistance = Mathf.Abs(deltaMovement.x);
 
                     // remember to remove the skinWidth from our deltaMovement
@@ -574,7 +575,7 @@ namespace Prime31
                     bool isGoingRight = false;
                     if (deltaMovement.x != 0)
                     {
-
+                        Debug.Log("BLAH");
                         deltaMovement.y = Mathf.Abs(Mathf.Tan(angle * Mathf.Deg2Rad) * deltaMovement.x);
                         isGoingRight = deltaMovement.x > 0;
 
@@ -697,7 +698,6 @@ namespace Prime31
                 }
                 else if (_raycastHit)
                 {
-                    collisionState.slopeDirection = (_raycastHit.normal.x > 0) ? 1 : -1; 
                     // set our new deltaMovement and recalculate the rayDistance taking it into account
                     deltaMovement.y = _raycastHit.point.y - ray.y;
                     rayDistance = Mathf.Abs(deltaMovement.y);
@@ -753,6 +753,7 @@ namespace Prime31
             _raycastHit = Physics2D.Raycast(slopeRay, rayDirection, slopeCheckRayDistance, platformMask);
             if (_raycastHit)
             {
+                collisionState.slopeDirection = (_raycastHit.normal.x > 0) ? 1 : -1;
 
                 // Set Stationary State based on velocity in x direction. If stationary, descend slope
                 if (playerRef != null)
@@ -767,21 +768,14 @@ namespace Prime31
                     permSlopeAngle = angle;
                     startTrig = true; 
                 }
-                //Debug.Log("PermAngle - Temp Angle: " + permSlopeAngle + " - " + angle + " = " + (permSlopeAngle - angle));
-                if(Mathf.Abs(permSlopeAngle - angle) > 30)
-                {
-                    //return; 
-                }
+
                 permSlopeAngle = angle; 
                 if (angle == 0)
                     return;
-                bool isMovingDownSlope = true;
+
+                // we are moving down the slope if our normal and movement direction are in the same x direction
+                bool isMovingDownSlope = (Mathf.Sign(_raycastHit.normal.x) == Mathf.Sign(deltaMovement.x)) || collisionState.stationarySlope;
                 
-                if (!collisionState.stationarySlope)
-                {
-                    // we are moving down the slope if our normal and movement direction are in the same x direction
-                    isMovingDownSlope = Mathf.Sign(_raycastHit.normal.x) == Mathf.Sign(deltaMovement.x);
-                }
 
 
                 if (isMovingDownSlope)
@@ -792,21 +786,23 @@ namespace Prime31
                     deltaMovement.y += _raycastHit.point.y - slopeRay.y - skinWidth;
                     //deltaMovement.x *= slopeModifier;
                     collisionState.movingDownSlope = true;
+                    //velocity.y -= 1000;
                     collisionState.slopeAngle = angle;
+                    
                     if (playerRef != null)
                     {
-                    }
 
-                    if (collisionState.stationarySlope && angle > 40 || collisionState.stationarySlope && playerRef.inputInfo.SlidingDownSlope)
-                    {
-                        deltaMovement.x += 10f * Mathf.Sign(_raycastHit.normal.x);
-                        playerRef.inputInfo.SlidingDownSlope = true; 
+                        if (collisionState.stationarySlope && angle > 20f)
+                        {
+                            playerRef.slideDownSlope(Mathf.Sign(_raycastHit.normal.x), angle, ref deltaMovement);
+                        }
+
                     }
-                    if (collisionState.stationarySlope && playerRef.inputInfo.SlidingDownSlope && angle < 3)
-                    {
-                        collisionState.stationarySlope = false;
-                        playerRef.inputInfo.SlidingDownSlope = false; 
-                    }
+                    
+                }
+                else
+                {
+                    collisionState.movingDownSlope = false; 
                 }
             }
         }
